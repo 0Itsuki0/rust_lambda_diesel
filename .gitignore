@@ -10,3 +10,5 @@
 # CDK asset staging directory
 /cdk/.cdk.staging
 /cdk/.DS_Store
+
+.env

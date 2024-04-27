@@ -1,60 +1,23 @@
-use crate::event::Event;
-use crate::event_service::EventService;
-use crate::handler_params::{PutTitleParams, QueryParams};
-
-use anyhow::Result;
-use axum::extract::Query;
 use axum::http::StatusCode;
-use axum::{
-    extract::{Path, State},
-    response::Json,
-};
+use axum::{extract::State, response::Json};
+use bb8::Pool;
+use diesel_async::{pooled_connection::AsyncDieselConnectionManager, AsyncPgConnection};
 use serde_json::{json, Value};
 
-pub async fn get_events(
-    State(service): State<EventService>,
-    Query(params): Query<QueryParams>,
-) -> (StatusCode, Json<Value>) {
-    let result = service.get_events(params).await;
-    result_to_response(result)
-}
+use crate::db_service;
 
-pub async fn post_event(
-    State(service): State<EventService>,
-    Json(event): Json<Event>,
+pub async fn list_all_users(
+    State(pool): State<Pool<AsyncDieselConnectionManager<AsyncPgConnection>>>,
 ) -> (StatusCode, Json<Value>) {
-    let result = service.post_event(event).await;
-    result_to_response(result)
-}
-
-pub async fn get_event_single(
-    State(service): State<EventService>,
-    Path(id): Path<String>,
-) -> (StatusCode, Json<Value>) {
-    let result = service.get_event_single(id).await;
-    result_to_response(result)
-}
-
-pub async fn delete_event_single(
-    State(service): State<EventService>,
-    Path(id): Path<String>,
-) -> (StatusCode, Json<Value>) {
-    let result = service.delete_event_single(id).await;
-    result_to_response(result)
-}
-
-pub async fn put_event_title(
-    State(service): State<EventService>,
-    Path(id): Path<String>,
-    Json(put_title_params): Json<PutTitleParams>,
-) -> (StatusCode, Json<Value>) {
-    let result = service.put_event_title(id, put_title_params.title).await;
-    result_to_response(result)
-}
-
-fn result_to_response(result: Result<Json<Value>>) -> (StatusCode, Json<Value>) {
-    match result {
-        Ok(json) => (StatusCode::OK, json),
+    let users = db_service::list_users(&pool).await;
+    match users {
+        Ok(users) => (
+            StatusCode::OK,
+            Json(json!({
+                "error": true,
+                "users": users
+            })),
+        ),
         Err(error) => (
             StatusCode::BAD_REQUEST,
             Json(json!({

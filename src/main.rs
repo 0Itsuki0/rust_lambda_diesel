@@ -1,39 +1,34 @@
-pub mod event;
-pub mod event_service;
+pub mod db_service;
 pub mod handler;
-pub mod handler_params;
+pub mod model;
+pub mod schema;
+use axum::{routing::get, Router};
+use bb8::Pool;
+use lambda_http::run;
+use lambda_http::{tracing, Error};
+use std::env::set_var;
 
-use aws_sdk_dynamodb::Client;
-use axum::{
-    routing::{get, put},
-    Router,
-};
-use event_service::EventService;
-use lambda_http::{run, tracing, Error};
-use std::env::{self, set_var};
+use diesel_async::{pooled_connection::AsyncDieselConnectionManager, AsyncPgConnection};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     tracing::init_default_subscriber();
     set_var("AWS_LAMBDA_HTTP_IGNORE_STAGE_IN_PATH", "true");
+    let db_url = std::env::var("DATABASE_URL")?;
+    let pool: Pool<AsyncDieselConnectionManager<AsyncPgConnection>> =
+        get_connection_pool(&db_url).await?;
 
-    let config = aws_config::load_from_env().await;
-    let db_client = Client::new(&config);
-    let table_name = env::var("DYNAMO_TABLE_NAME")?;
-
-    let event_service = EventService::new(db_client, &table_name);
-
-    let event_api = Router::new()
-        .route("/", get(handler::get_events).post(handler::post_event))
-        .route(
-            "/:id",
-            get(handler::get_event_single).delete(handler::delete_event_single),
-        )
-        .route("/:id/title", put(handler::put_event_title));
-
-    let app = Router::new()
-        .nest("/events", event_api)
-        .with_state(event_service);
+    let event_api = Router::new().route("/", get(handler::list_all_users));
+    let app = Router::new().nest("/users", event_api).with_state(pool);
 
     run(app).await
+}
+
+pub async fn get_connection_pool(
+    db_url: &str,
+) -> Result<Pool<AsyncDieselConnectionManager<AsyncPgConnection>>, Error> {
+    // let db_url = std::env::var("DATABASE_URL").expect("missing DATABASE_URL environment variable");
+    let config = AsyncDieselConnectionManager::<AsyncPgConnection>::new(db_url);
+    let pool = Pool::builder().build(config).await?;
+    Ok(pool)
 }
